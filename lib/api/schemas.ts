@@ -48,6 +48,10 @@ export const analyzeBodySchema = z.object({
     itemUrl: z.string().optional(),
     countryCode: z.string().optional(),
     region: z.string().optional(),
+    creator: z.string().optional(),
+    views: z.number().int().min(0).optional(),
+    likes: z.number().int().min(0).optional(),
+    shares: z.number().int().min(0).optional(),
   }),
 })
 

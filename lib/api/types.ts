@@ -116,6 +116,8 @@ export interface ApiErrorBody {
 /**
  * The frontend sends the selected video with the request so the
  * serverless handler doesn't have to rely on in-memory state.
+ * Engagement stats (views/likes/shares) come from the feed and are
+ * real numbers when the feed source is the TikTok API.
  */
 export interface AnalyzeRequestVideo {
   id: string
@@ -126,6 +128,10 @@ export interface AnalyzeRequestVideo {
   itemUrl?: string
   countryCode?: string
   region?: string
+  creator?: string
+  views?: number
+  likes?: number
+  shares?: number
 }
 
 export type EvidenceLevel = 'METADATA_ONLY' | 'VIDEO_CONTENT' | 'FULL_ANALYTICS'

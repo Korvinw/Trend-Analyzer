@@ -17,8 +17,11 @@ import type { Category, LengthBucket, SortKey, VideoFormat } from '@/lib/types'
 
 export type Period = 'today' | '7d' | '30d'
 
+export type Region = 'US' | 'RU' | 'ALL'
+
 export interface Filters {
   period: Period
+  region: Region
   category: Category | 'all'
   formats: VideoFormat[]
   lengths: LengthBucket[]
@@ -27,6 +30,7 @@ export interface Filters {
 
 export const DEFAULT_FILTERS: Filters = {
   period: '7d',
+  region: 'US',
   category: 'all',
   formats: [],
   lengths: [],
@@ -37,6 +41,12 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: 'today', label: 'Сегодня' },
   { key: '7d', label: '7 дней' },
   { key: '30d', label: '30 дней' },
+]
+
+const REGIONS: { key: Region; label: string }[] = [
+  { key: 'US', label: '🇺🇸 США' },
+  { key: 'RU', label: '🇷🇺 Россия' },
+  { key: 'ALL', label: '🌍 Все регионы' },
 ]
 
 const LENGTHS: LengthBucket[] = ['<15s', '15–30s', '30–60s', '60s+']
@@ -86,6 +96,25 @@ export function FilterBar({ filters, onChange, onReset, hasActive }: FilterBarPr
             </button>
           ))}
         </div>
+
+        {/* Region dropdown */}
+        <FilterMenu
+          label={REGIONS.find((r) => r.key === filters.region)?.label ?? 'Регион'}
+          active={filters.region !== DEFAULT_FILTERS.region}
+        >
+          <DropdownMenuLabel>Регион трендов</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={filters.region}
+            onValueChange={(v) => set('region', v as Region)}
+          >
+            {REGIONS.map((r) => (
+              <DropdownMenuRadioItem key={r.key} value={r.key}>
+                {r.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </FilterMenu>
 
         {/* Category dropdown */}
         <FilterMenu

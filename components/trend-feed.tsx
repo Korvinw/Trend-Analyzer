@@ -24,6 +24,10 @@ const apiVideo = (v: TrendVideo) => ({
   itemUrl: v.sourceUrl,
   countryCode: v.countryCode ?? undefined,
   region: v.region ?? undefined,
+  creator: v.creator ?? undefined,
+  views: v.views ?? undefined,
+  likes: v.likes ?? undefined,
+  shares: v.shares ?? undefined,
 })
 
 export function TrendFeed({ search }: TrendFeedProps) {
@@ -41,13 +45,13 @@ export function TrendFeed({ search }: TrendFeedProps) {
 
   const fetchSeq = useRef(0)
 
-  const loadFeed = useCallback(async (period: Filters['period']) => {
+  const loadFeed = useCallback(async (period: Filters['period'], region: Filters['region']) => {
     const seq = ++fetchSeq.current
     setFeedSource('loading')
     try {
       // TikTok period: 7 or 30 days. "today" is not supported upstream.
       const apiPeriod = period === '30d' ? 30 : 7
-      const res = await fetch(`/api/videos?period=${apiPeriod}&limit=20&order_by=vv&country=US`)
+      const res = await fetch(`/api/videos?period=${apiPeriod}&limit=20&order_by=vv&country=${region}`)
       if (!res.ok) throw new Error(`feed request failed: ${res.status}`)
       const json = await res.json()
       if (seq !== fetchSeq.current) return
@@ -61,20 +65,21 @@ export function TrendFeed({ search }: TrendFeedProps) {
   }, [])
 
   useEffect(() => {
-    loadFeed(filters.period)
-  }, [loadFeed, filters.period])
+    loadFeed(filters.period, filters.region)
+  }, [loadFeed, filters.period, filters.region])
 
-  // New feed data — drop cached analyses tied to the previous period.
+  // New feed data — drop cached analyses tied to the previous filters.
   useEffect(() => {
     setAnalyses({})
     setStatuses({})
-  }, [filters.period])
+  }, [filters.period, filters.region])
 
   const hasActiveFilters =
     filters.category !== 'all' ||
     filters.formats.length > 0 ||
     filters.lengths.length > 0 ||
     filters.period !== DEFAULT_FILTERS.period ||
+    filters.region !== DEFAULT_FILTERS.region ||
     filters.sort !== DEFAULT_FILTERS.sort ||
     search.trim().length > 0
 

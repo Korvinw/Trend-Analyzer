@@ -107,13 +107,17 @@ describe('buildGeminiPrompt', () => {
     itemUrl: 'https://www.tiktok.com/@mnm_pipi/video/7572995879557139742',
     countryCode: 'US',
     region: 'United States',
+    creator: 'mnm_pipi',
+    views: 25300000,
+    likes: 4000000,
+    shares: 193600,
   }
 
   it('forces METADATA_ONLY and forbids inventing metrics', () => {
     const prompt = buildGeminiPrompt(video)
     expect(prompt).toContain('METADATA_ONLY')
-    expect(prompt).toMatch(/NEVER invent or estimate metrics/i)
-    expect(prompt).toMatch(/do NOT have access to the video file/i)
+    expect(prompt).toMatch(/не выдумывай и не оценивай метрики/i)
+    expect(prompt).toMatch(/нет самого видео/i)
   })
 
   it('embeds the video metadata as JSON', () => {
@@ -121,6 +125,22 @@ describe('buildGeminiPrompt', () => {
     expect(prompt).toContain('7572995879557139742')
     expect(prompt).toContain('gifting a support cat')
     expect(prompt).toContain('"durationSeconds": 159')
+  })
+
+  it('embeds real engagement stats and computed ratios', () => {
+    const prompt = buildGeminiPrompt(video)
+    expect(prompt).toContain('"views": 25300000')
+    expect(prompt).toContain('"likes": 4000000')
+    expect(prompt).toContain('"shares": 193600')
+    // likeRate = 4M / 25.3M ≈ 0.1581, shareRate = 193600 / 25.3M ≈ 0.0077
+    expect(prompt).toContain('"likeRate": 0.1581')
+    expect(prompt).toContain('"shareRate": 0.0077')
+  })
+
+  it('omits ratios when stats are missing', () => {
+    const prompt = buildGeminiPrompt({ id: 'x', title: 't' })
+    expect(prompt).toContain('"likeRate": null')
+    expect(prompt).toContain('"shareRate": null')
   })
 })
 
@@ -168,6 +188,23 @@ describe('mapGeminiToAnalysis', () => {
     const a = mapGeminiToAnalysis(rest, video)
     expect(a.caveat).toContain('не смотрел само видео')
     expect(a.caveat).toContain('просмотры, лайки, retention')
+  })
+
+  it('mentions engagement stats in the caveat when present', () => {
+    const { caveat: _c, ...rest } = validResult
+    const a = mapGeminiToAnalysis(rest, { ...video, views: 1000, likes: 100 })
+    expect(a.caveat).toContain('Учтены просмотры/лайки/репосты')
+  })
+
+  it('builds a duration-proportional scenario when Gemini omits it', () => {
+    const { scenario: _s, ...rest } = validResult
+    const a = mapGeminiToAnalysis(rest, { ...video, duration: 40 })
+    expect(a.scenario).toHaveLength(4)
+    expect(a.scenario[0].phase).toBe('HOOK')
+    expect(a.scenario[0].time).toBe('0–6с')
+    expect(a.scenario[1].time).toBe('6–22с')
+    expect(a.scenario[2].time).toBe('22–34с')
+    expect(a.scenario[3].time).toBe('34–40с')
   })
 })
 

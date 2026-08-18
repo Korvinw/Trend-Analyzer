@@ -196,6 +196,28 @@ describe('fetchTrendingVideos', () => {
     await expect(fetchTrendingVideos(baseQuery)).rejects.toMatchObject({ status: 502, code: 'UPSTREAM' })
   })
 
+  it('uses the country-specific creator pool (RU) and still returns videos', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/info')) {
+        return new Response(JSON.stringify(userInfoPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/api/user/posts')) {
+        return new Response(JSON.stringify(buildPostsResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', { status: 404 })
+    }))
+
+    const data = await fetchTrendingVideos({ ...baseQuery, country: 'RU' })
+    expect(data.videos).toHaveLength(2)
+  })
+
   it('throws on a non-JSON upstream response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>', { status: 200 })))
 

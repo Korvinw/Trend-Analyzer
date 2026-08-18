@@ -9,9 +9,19 @@ const USER_POSTS_PATH = '/api/user/posts'
 /**
  * The provider's original `/api/trending/*` endpoints are deprecated
  * (they return `{"code":0,"data":null,"msg":"deprecated"}`), so the feed is
- * built from recent posts of a rotating pool of popular creators instead.
+ * built from recent posts of a rotating pool of popular creators. The pool
+ * is selected by the requested country; unknown countries fall back to the
+ * global pool.
  */
-const CREATOR_POOL = ['taylorswift', 'khaby.lame', 'addisonre', 'mrbeast', 'zachking', 'selenagomez']
+const CREATOR_POOLS: Record<string, string[]> = {
+  US: ['taylorswift', 'khaby.lame', 'addisonre', 'mrbeast', 'zachking', 'selenagomez'],
+  RU: ['danya_milokhin', 'sasha_koks', 'exelombardi', 'likemilka', 'ilya_prusikin', 'katyasolovey'],
+  ALL: ['taylorswift', 'khaby.lame', 'addisonre', 'mrbeast', 'zachking', 'selenagomez'],
+}
+
+function creatorsForCountry(country: string): string[] {
+  return CREATOR_POOLS[country] ?? CREATOR_POOLS.ALL
+}
 
 /** Hard cap documented by the TikTok endpoint. */
 export const MAX_LIMIT = 20
@@ -36,10 +46,10 @@ export function tiktokHost(): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Small in-memory cache (per serverless instance, TTL 60s)                  */
+/*  Small in-memory cache (per serverless instance, TTL 5 min)                 */
 /* -------------------------------------------------------------------------- */
 
-const CACHE_TTL_MS = 60_000
+const CACHE_TTL_MS = 300_000
 const cache = new Map<string, { at: number; data: VideosData }>()
 const userInfoCache = new Map<string, { at: number; data: CreatorInfo }>()
 
@@ -216,8 +226,9 @@ export async function fetchTrendingVideos(query: ParsedVideoQuery): Promise<Vide
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data
 
   // Rotate through the pool so the feed changes over time.
+  const pool = creatorsForCountry(query.country)
   const base = Math.floor(Date.now() / CACHE_TTL_MS)
-  const creators = [CREATOR_POOL[base % CREATOR_POOL.length], CREATOR_POOL[(base + 1) % CREATOR_POOL.length]]
+  const creators = [pool[base % pool.length], pool[(base + 1) % pool.length]]
 
   const items: RawTiktokItem[] = []
   let lastError: Error | null = null

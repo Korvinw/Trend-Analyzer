@@ -47,36 +47,58 @@ export function resetGeminiClient(): void {
 /*  Prompt                                                                    */
 /* -------------------------------------------------------------------------- */
 
+function ratio(numerator: number | null | undefined, denominator: number | null | undefined): number | null {
+  if (numerator == null || denominator == null || denominator <= 0) return null
+  return Number((numerator / denominator).toFixed(4))
+}
+
 export function buildGeminiPrompt(video: AnalyzeRequestVideo): string {
+  const views = typeof video.views === 'number' ? video.views : null
+  const likes = typeof video.likes === 'number' ? video.likes : null
+  const shares = typeof video.shares === 'number' ? video.shares : null
+
   const metadata = JSON.stringify(
     {
       id: video.id,
       rank: video.rank ?? null,
       title: video.title ?? null,
+      creator: video.creator ?? null,
       coverUrl: video.cover ?? null,
       durationSeconds: video.duration ?? null,
       itemUrl: video.itemUrl ?? null,
       countryCode: video.countryCode ?? null,
       region: video.region ?? null,
+      stats: {
+        views,
+        likes,
+        shares,
+        likeRate: ratio(likes, views),
+        shareRate: ratio(shares, views),
+      },
     },
     null,
     2,
   )
 
   return [
-    'You are an expert TikTok creative strategist. Analyze the video below using ONLY the metadata provided.',
+    'Ты — ведущий TikTok-стратег. Твоя задача — разобрать механику ролика и оценить, насколько её стоит повторять.',
     '',
-    'CRITICAL RULES:',
-    '1. You do NOT have access to the video file, audio, captions, view/like/comment/share counts or retention data.',
-    '2. NEVER invent or estimate metrics such as views, likes, comments, shares, watch time or retention. If a metric is unknown, do not mention a number for it.',
-    '3. evidenceLevel MUST be "METADATA_ONLY".',
-    '4. Base every factor, score and recommendation strictly on: title, duration, cover URL domain hint, creator, country/region and ranking.',
-    '5. Be skeptical and specific. A weak hook or generic title must score low.',
-    '6. Reply with ONLY a single valid JSON object, no markdown fences, matching this schema:',
+    'Тебе даны ТОЛЬКО метаданные: заголовок, создатель, длительность, страна и — если доступны — реальные метрики (просмотры/лайки/репосты) и производные коэффициенты.',
+    '',
+    'ЖЁСТКИЕ ПРАВИЛА:',
+    '1. У тебя НЕТ самого видео, аудио и данных удержания. Не ссылайся на кадры, монтаж или звук — анализируй заголовок, хэштеги, тему, нишу, длительность, создателя и метрики.',
+    '2. НИКОГДА не выдумывай и не оценивай метрики. Комментарии, удержание (retention), досмотры НЕИЗВЕСТНЫ — не приводи для них числа. Используй только переданные views/likes/shares и коэффициенты.',
+    '3. Интерпретируй коэффициенты честно и по делу: типичный like/view в TikTok ≈ 3–6% (сильный сигнал — выше 8%), share/view ≈ 0.2–1% (виральный — выше 1.5%). Если коэффициент недоступен — не делай выводов о виральности, прямо отметь, что сигнала нет.',
+    '4. evidenceLevel ДОЛЖЕН быть "METADATA_ONLY".',
+    '5. КАЖДЫЙ вывод обязан опираться на конкретику: цитируй слова из заголовка, называй нишу и паттерн хука (открытая петля, конкретика/цифры, обратный отсчёт, список, до/после, POV, челлендж, история, провокация, туториал). Клише или слабый хук — низкие баллы.',
+    '6. ЗАПРЕЩЕНО писать шаблонные фразы вроде «сделайте контент интереснее», «привлекайте внимание», «добавьте вовлечённость» — без конкретики. Каждая рекомендация называет конкретный элемент: переформулированный заголовок, конкретный первый кадр, конкретную фразу CTA, конкретную длительность или структуру.',
+    '7. Сценарий распределяй пропорционально длительности: HOOK ≈ первые 10–15%, BUILD ≈ 15–55%, PAYOFF ≈ 55–85%, CTA ≈ 85–100%. Заметки фаз — про тему ЭТОГО ролика (что именно показывать), а не общие слова.',
+    '8. score 0–100 = потенциал ПОВТОРИТЬ механику. Якоря: 90+ — сильные коэффициенты + яркий узнаваемый паттерн хука + механику можно перенести в другую нишу; 70–89 — рабочая механика с конкретными замечаниями; 50–69 — средний хук и средние сигналы; ниже 50 — клише, слабые сигналы, механика не ясна из метаданных.',
+    '9. Ответ — ТОЛЬКО один валидный JSON без markdown-обёртки, строго по схеме:',
     '{',
-    '  "score": <int 0-100 overall potential to replicate the mechanic>,\n  "verdict": "HIGH_POTENTIAL" | "MEDIUM_POTENTIAL" | "LOW_POTENTIAL",\n  "summary": "<2-3 sentence Russian summary of why the mechanic works or not>",\n  "factors": [\n    { "name": "Hook" | "Pacing" | "Engagement" | "Format" | "Novelty",\n      "score": <int 0-100>,\n      "impact": "positive" | "negative" | "neutral",\n      "reason": "<specific Russian reason grounded in the metadata>" }\n  ],\n  "recommendations": ["<Russian recommendation>", ...],\n  "remakePotential": <int 0-100>,\n  "evidenceLevel": "METADATA_ONLY",\n  "keep": ["<what to keep, Russian>", ...],\n  "change": ["<what to change, Russian>", ...],\n  "tryIdeas": ["<remake ideas, Russian>", ...],\n  "scenario": [\n    { "phase": "HOOK" | "BUILD" | "PAYOFF" | "CTA", "time": "<e.g. 0-2s>", "note": "<Russian note>" }\n  ],\n  "caveat": "<honest limitation note, Russian>"\n}',
+    '  "score": <int 0-100>,\n  "verdict": "HIGH_POTENTIAL" | "MEDIUM_POTENTIAL" | "LOW_POTENTIAL",\n  "summary": "<2-3 предложения на русском: почему механика работает или нет, со ссылкой на конкретику>",\n  "factors": [\n    { "name": "Hook" | "Pacing" | "Engagement" | "Format" | "Novelty",\n      "score": <int 0-100>,\n      "impact": "positive" | "negative" | "neutral",\n      "reason": "<конкретное обоснование на русском, с цитатой из заголовка или числом коэффициента>" }\n  ],\n  "recommendations": ["<конкретная рекомендация на русском>", ...],\n  "remakePotential": <int 0-100>,\n  "evidenceLevel": "METADATA_ONLY",\n  "keep": ["<что сохранить, на русском>", ...],\n  "change": ["<что изменить, на русском>", ...],\n  "tryIdeas": ["<конкретная идея ремейка с темой ролика, на русском>", ...],\n  "scenario": [\n    { "phase": "HOOK" | "BUILD" | "PAYOFF" | "CTA", "time": "<секунды, например 0-4с>", "note": "<что конкретно показать в этой фазе, на русском>" }\n  ],\n  "caveat": "<честное ограничение, на русском>"\n}',
     '',
-    'VIDEO METADATA:',
+    'МЕТАДАННЫЕ РОЛИКА:',
     metadata,
   ].join('\n')
 }
@@ -204,12 +226,7 @@ export function mapGeminiToAnalysis(result: GeminiAnalysisResult, video: Analyze
   const scenario: GeminiScenarioStep[] =
     result.scenario?.length
       ? result.scenario
-      : [
-          { phase: 'HOOK', time: '0–2с', note: 'Обещание результата в первом кадре.' },
-          { phase: 'BUILD', time: '2–7с', note: 'Быстрая демонстрация процесса.' },
-          { phase: 'PAYOFF', time: '7–11с', note: 'Наглядный результат.' },
-          { phase: 'CTA', time: '11–13с', note: 'Короткий призыв сохранить или повторить.' },
-        ]
+      : fallbackScenario(video.duration)
 
   return {
     score: result.score,
@@ -222,15 +239,30 @@ export function mapGeminiToAnalysis(result: GeminiAnalysisResult, video: Analyze
     change,
     tryIdeas,
     scenario: scenario.map((s) => ({ phase: s.phase, time: s.time, note: s.note })),
-    caveat: result.caveat ?? defaultCaveat(result.evidenceLevel, video.duration),
+    caveat: result.caveat ?? defaultCaveat(result.evidenceLevel, video.duration, video.views != null),
   }
 }
 
-export function defaultCaveat(level: EvidenceLevel, duration?: number | null): string {
+/** Duration-proportional fallback blueprint (used only if Gemini omits it). */
+function fallbackScenario(duration?: number | null): GeminiScenarioStep[] {
+  const d = duration && duration > 0 ? duration : null
+  const hookEnd = d ? Math.round(d * 0.15) : 2
+  const buildEnd = d ? Math.round(d * 0.55) : 7
+  const payoffEnd = d ? Math.round(d * 0.85) : 11
+  const ctaEnd = d ?? 13
+  return [
+    { phase: 'HOOK', time: d ? `0–${hookEnd}с` : '0–2с', note: 'Обещание результата в первом кадре: конкретика или открытая петля из заголовка.' },
+    { phase: 'BUILD', time: d ? `${hookEnd}–${buildEnd}с` : '2–7с', note: 'Быстрая демонстрация процесса с нарастающим напряжением.' },
+    { phase: 'PAYOFF', time: d ? `${buildEnd}–${payoffEnd}с` : '7–11с', note: 'Наглядный результат, который обещал хук.' },
+    { phase: 'CTA', time: d ? `${payoffEnd}–${ctaEnd}с` : '11–13с', note: 'Короткий призыв: сохранить, повторить или прокомментировать.' },
+  ]
+}
+
+export function defaultCaveat(level: EvidenceLevel, duration?: number | null, hasStats = false): string {
   const base = `Оценка основана ${duration != null ? `на длительности (${duration}с) и ` : 'на '}названии ролика — Gemini не смотрел само видео.`
   switch (level) {
     case 'METADATA_ONLY':
-      return `${base} Метрики (просмотры, лайки, retention) недоступны в источнике данных.`
+      return `${base} ${hasStats ? 'Учтены просмотры/лайки/репосты; удержание и комментарии недоступны.' : 'Метрики (просмотры, лайки, retention) недоступны в источнике данных.'}`
     case 'VIDEO_CONTENT':
       return `${base} Анализ учитывал содержимое видео, но не полную статистику.`
     case 'FULL_ANALYTICS':
