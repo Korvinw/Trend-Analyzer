@@ -49,8 +49,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: { code: err.code, message: err.message } }, { status: err.status })
     }
     console.error('[api/videos] unexpected error:', err)
+    const detail = err instanceof Error ? err.message : 'unknown error'
     return NextResponse.json(
-      { error: { code: 'UPSTREAM', message: 'Unexpected error while fetching TikTok data' } },
+      { error: { code: 'UPSTREAM', message: `Unexpected error while fetching TikTok data: ${detail}` } },
       { status: 502 },
     )
   }
