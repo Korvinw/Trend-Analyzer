@@ -5,7 +5,6 @@ import {
   VERDICT_VALUES,
   type EvidenceLevel,
   type GeminiAnalysisResult,
-  type RawTiktokResponse,
 } from './types'
 
 /* -------------------------------------------------------------------------- */
@@ -24,47 +23,6 @@ export const videoQuerySchema = z.object({
 })
 
 export type ParsedVideoQuery = z.infer<typeof videoQuerySchema>
-
-/* -------------------------------------------------------------------------- */
-/*  Raw TikTok response (accepts both `limit` and `size` pagination)          */
-/* -------------------------------------------------------------------------- */
-
-const rawPaginationSchema = z.object({
-  has_more: z.boolean().optional(),
-  page: z.coerce.number().int().min(1).optional(),
-  total_count: z.coerce.number().int().min(0).optional(),
-  limit: z.coerce.number().int().min(1).optional(),
-  size: z.coerce.number().int().min(1).optional(),
-})
-
-const rawVideoSchema = z.object({
-  id: z.string().min(1),
-  item_id: z.string().optional(),
-  title: z.string().optional(),
-  cover: z.string().optional(),
-  duration: z.coerce.number().int().min(0).optional(),
-  item_url: z.string().optional(),
-  country_code: z.string().optional(),
-  region: z.string().optional(),
-})
-
-const rawResponseSchema = z.object({
-  code: z.number().optional(),
-  msg: z.string().optional(),
-  request_id: z.string().optional(),
-  data: z.object({
-    pagination: rawPaginationSchema,
-    videos: z.array(rawVideoSchema),
-  }),
-})
-
-export function parseTiktokResponse(json: unknown): RawTiktokResponse {
-  const parsed = rawResponseSchema.safeParse(json)
-  if (!parsed.success) {
-    throw new Error(`Malformed TikTok response: ${parsed.error.issues.map((i) => i.message).join('; ')}`)
-  }
-  return parsed.data
-}
 
 /** RapidAPI may return `{ "message": "Bad request" }` on 4xx. */
 export function isBadRequestPayload(json: unknown): json is { message: string } {

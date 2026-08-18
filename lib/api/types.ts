@@ -19,32 +19,42 @@ export interface VideoQuery {
 }
 
 /**
- * Raw TikTok response. Docs are inconsistent about pagination:
- * one example uses `limit`, another uses `size` — both are accepted.
+ * Raw item from TikTok's user-posts feed (`/api/user/posts`), full aweme
+ * shape. Only the fields the app consumes are typed; everything else is
+ * ignored and unknown fields are never guessed.
  */
-export interface RawTiktokVideo {
-  id: string
-  item_id?: string
-  title?: string
-  cover?: string
-  duration?: number
-  item_url?: string
-  country_code?: string
-  region?: string
+export interface RawTiktokItem {
+  id?: string
+  desc?: string
+  createTime?: number
+  stats?: {
+    playCount?: number
+    diggCount?: number
+    commentCount?: number
+    shareCount?: number
+    collectCount?: number
+  }
+  video?: {
+    cover?: string
+    originCover?: string
+    dynamicCover?: string
+    duration?: number
+  }
+  author?: {
+    uniqueId?: string
+    nickname?: string
+    avatarMedium?: string
+    avatarLarger?: string
+    secUid?: string
+  }
 }
 
+/** Raw user-posts response: `{ data: { itemList: [...] } }`. */
 export interface RawTiktokResponse {
-  code?: number
-  msg?: string
-  data: {
-    pagination: {
-      has_more?: boolean
-      page?: number
-      total_count?: number
-      limit?: number
-      size?: number
-    }
-    videos: RawTiktokVideo[]
+  data?: {
+    itemList?: unknown[]
+    hasMore?: boolean
+    cursor?: string
   }
 }
 
@@ -82,6 +92,8 @@ export interface CreatorInfo {
   signature: string | null
   avatar: string | null
   url: string
+  /** TikTok secUid — required by the user-posts endpoint. */
+  secUid: string | null
   stats: {
     followers: number | null
     following: number | null

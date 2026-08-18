@@ -1,39 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearTiktokCache, fetchUserInfo, normalizeUserInfo, normalizeVideo } from '../lib/api/tiktok'
-import {
-  TiktokApiError,
-  fetchTrendingVideos,
-  validateQuery,
-} from '../lib/api/tiktok'
-import type { RawTiktokVideo } from '../lib/api/types'
+import { clearTiktokCache, fetchTrendingVideos, fetchUserInfo, normalizeUserInfo, normalizeVideo } from '../lib/api/tiktok'
+import { TiktokApiError, validateQuery } from '../lib/api/tiktok'
 
-const sampleRaw: RawTiktokVideo = {
-  country_code: 'US',
-  cover: 'https://p16-sign-va.tiktokcdn.com/cover.jpg',
-  duration: 159,
-  id: '7572995879557139742',
-  item_id: '7572995879557139742',
-  item_url: 'https://www.tiktok.com/@mnm_pipi/video/7572995879557139742',
-  region: 'United States',
-  title: 'maybe the best day of my life 🥹💚🎄🐱 #angeltree #walmart gifting a support cat for Christmas with Angel Gift Tree',
+const sampleAweme = {
+  id: '7647758735229635871',
+  desc: 'Writing this song felt like a musical departure. #newmusic',
+  createTime: 1780632608,
+  stats: { playCount: 25300000, diggCount: 4000000, commentCount: 49100, shareCount: 193600, collectCount: 132200 },
+  video: { cover: 'https://p19-common-sign.tiktokcdn.com/cover.jpg', duration: 25 },
+  author: { uniqueId: 'taylorswift', nickname: 'Taylor Swift', avatarMedium: 'https://cdn/avatar.jpg', secUid: 'sec-1' },
 }
 
-const paginationWithLimit = {
-  has_more: true,
-  page: 1,
-  limit: 20,
-  total_count: 500,
+const userInfoPayload = {
+  statusCode: 0,
+  shareMeta: { title: 'Taylor Swift on TikTok' },
+  userInfo: {
+    stats: { followerCount: 33400000, followingCount: 0, heart: 275500000, heartCount: 275500000, videoCount: 83 },
+    user: {
+      id: '6881290705605477381',
+      uniqueId: 'taylorswift',
+      nickname: 'Taylor Swift',
+      signature: 'This is pretty much just a cat account',
+      avatarMedium: 'https://cdn/avatar.jpg',
+      secUid: 'MS4wLjABAAAAqB08cUbXaDWqbD6MCga2RbGTuhfO2EsHayBYx08NDrN7IE3jQuRDNNN6YwyfH6_6',
+      verified: true,
+    },
+  },
 }
 
-const paginationWithSize = {
-  has_more: true,
-  page: 1,
-  size: 20,
-  total_count: 500,
-}
-
-function buildResponse(pagination: unknown, videos: unknown[] = [sampleRaw]) {
-  return { code: 0, data: { pagination, videos }, msg: 'OK', request_id: 'req-1' }
+function buildPostsResponse(itemList: unknown[] = [sampleAweme]) {
+  return { data: { cursor: '1665126038000', hasMore: true, itemList } }
 }
 
 afterEach(() => {
@@ -77,21 +73,24 @@ describe('validateQuery', () => {
 })
 
 describe('normalizeVideo', () => {
-  it('maps raw TikTok video into the frontend shape', () => {
-    const v = normalizeVideo(sampleRaw)
-    expect(v.id).toBe('7572995879557139742')
-    expect(v.creator).toBe('mnm_pipi')
-    expect(v.hook).toBe(sampleRaw.title)
-    expect(v.thumbnail).toBe(sampleRaw.cover)
-    expect(v.sourceUrl).toBe(sampleRaw.item_url)
-    expect(v.duration).toBe(159)
-    expect(v.countryCode).toBe('US')
-    expect(v.region).toBe('United States')
-    expect(v.length).toBe('60s+')
+  it('maps an aweme item into the frontend shape', () => {
+    const v = normalizeVideo(sampleAweme)!
+    expect(v.id).toBe('7647758735229635871')
+    expect(v.creator).toBe('taylorswift')
+    expect(v.hook).toBe('Writing this song felt like a musical departure. #newmusic')
+    expect(v.thumbnail).toBe(sampleAweme.video.cover)
+    expect(v.sourceUrl).toBe('https://www.tiktok.com/@taylorswift/video/7647758735229635871')
+    expect(v.duration).toBe(25)
+    expect(v.views).toBe(25300000)
+    expect(v.likes).toBe(4000000)
+    expect(v.shares).toBe(193600)
   })
 
-  it('does not fabricate engagement metrics', () => {
-    const v = normalizeVideo(sampleRaw)
+  it('keeps metrics null when the payload lacks them', () => {
+    const v = normalizeVideo({ id: 'x', desc: '   ' })!
+    expect(v.creator).toBeNull()
+    expect(v.hook).toBe('')
+    expect(v.duration).toBeNull()
     expect(v.views).toBeNull()
     expect(v.likes).toBeNull()
     expect(v.shares).toBeNull()
@@ -101,50 +100,70 @@ describe('normalizeVideo', () => {
     expect(v.postedAgo).toBeNull()
   })
 
-  it('handles missing optional fields', () => {
-    const v = normalizeVideo({ id: 'x', title: '   ' })
-    expect(v.creator).toBeNull()
-    expect(v.hook).toBe('')
-    expect(v.duration).toBeNull()
-    expect(v.countryCode).toBeNull()
+  it('returns null for items without an id', () => {
+    expect(normalizeVideo({ desc: 'no id' })).toBeNull()
+    expect(normalizeVideo('garbage')).toBeNull()
+    expect(normalizeVideo(null)).toBeNull()
   })
 })
 
 describe('fetchTrendingVideos', () => {
-  it('normalizes a standard response with limit-based pagination', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(JSON.stringify(buildResponse(paginationWithLimit)), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+  const baseQuery = { page: 1, limit: 20, period: 30, order_by: 'vv' as const, country: 'US' }
+
+  it('fetches user info, then posts, and normalizes them', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/info')) {
+        return new Response(JSON.stringify(userInfoPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/api/user/posts')) {
+        return new Response(JSON.stringify(buildPostsResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', { status: 404 })
     }))
 
-    const data = await fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' })
-    expect(data.videos).toHaveLength(1)
-    expect(data.videos[0].creator).toBe('mnm_pipi')
-    expect(data.pagination).toEqual({
-      page: 1,
-      limit: 20,
-      hasMore: true,
-      totalCount: 500,
-    })
+    const data = await fetchTrendingVideos(baseQuery)
+    expect(data.videos).toHaveLength(2)
+    expect(data.videos[0].creator).toBe('taylorswift')
+    expect(data.videos[0].views).toBe(25300000)
+    expect(data.pagination).toEqual({ page: 1, limit: 20, hasMore: false, totalCount: 2 })
     expect(data.requestedAt).toBeTruthy()
   })
 
-  it('accepts the size-based pagination variant from the docs', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(JSON.stringify(buildResponse(paginationWithSize)), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+  it('skips creators without a secUid and still returns other videos', async () => {
+    let infoCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/info')) {
+        infoCalls += 1
+        const payload = infoCalls === 1
+          ? { userInfo: { user: { uniqueId: 'x', nickname: 'X' } } }
+          : userInfoPayload
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/api/user/posts')) {
+        return new Response(JSON.stringify(buildPostsResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('{}', { status: 404 })
     }))
 
-    const data = await fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' })
-    expect(data.pagination.limit).toBe(20)
-    expect(data.pagination.totalCount).toBe(500)
+    const data = await fetchTrendingVideos(baseQuery)
+    expect(data.videos).toHaveLength(1)
   })
 
-  it('propagates RapidAPI errors with status', async () => {
+  it('propagates RapidAPI errors from user info', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       return new Response(JSON.stringify({ message: 'Bad request' }), {
         status: 400,
@@ -152,46 +171,58 @@ describe('fetchTrendingVideos', () => {
       })
     }))
 
-    await expect(
-      fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' }),
-    ).rejects.toMatchObject({ status: 400, code: 'BAD_REQUEST', message: 'Bad request' })
+    await expect(fetchTrendingVideos(baseQuery)).rejects.toMatchObject({
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Bad request',
+    })
   })
 
-  it('propagates upstream 5xx errors', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('oops', { status: 502 })))
-
-    await expect(
-      fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' }),
-    ).rejects.toMatchObject({ status: 502 })
-  })
-
-  it('throws on malformed response', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(JSON.stringify({ data: { videos: 'not-an-array' } }), {
+  it('throws UPSTREAM when every feed source is empty', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/user/info')) {
+        return new Response(JSON.stringify(userInfoPayload), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(buildPostsResponse([])), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     }))
 
-    await expect(
-      fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' }),
-    ).rejects.toThrow(/Malformed TikTok response/)
+    await expect(fetchTrendingVideos(baseQuery)).rejects.toMatchObject({ status: 502, code: 'UPSTREAM' })
   })
 
-  it('throws on non-JSON response', async () => {
+  it('throws on a non-JSON upstream response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>', { status: 200 })))
 
-    await expect(
-      fetchTrendingVideos({ page: 1, limit: 20, period: 30, order_by: 'vv', country: 'US' }),
-    ).rejects.toThrow(/non-JSON/)
+    await expect(fetchTrendingVideos(baseQuery)).rejects.toThrow(/non-JSON/)
   })
 })
 
 describe('normalizeUserInfo', () => {
-  it('extracts creator fields from a typical nested payload', () => {
+  it('extracts fields from the documented userInfo shape', () => {
+    const info = normalizeUserInfo(userInfoPayload, 'taylorswift')
+    expect(info.id).toBe('6881290705605477381')
+    expect(info.uniqueId).toBe('taylorswift')
+    expect(info.nickname).toBe('Taylor Swift')
+    expect(info.signature).toBe('This is pretty much just a cat account')
+    expect(info.avatar).toBe('https://cdn/avatar.jpg')
+    expect(info.secUid).toBe('MS4wLjABAAAAqB08cUbXaDWqbD6MCga2RbGTuhfO2EsHayBYx08NDrN7IE3jQuRDNNN6YwyfH6_6')
+    expect(info.stats).toEqual({
+      followers: 33400000,
+      following: 0,
+      videos: 83,
+      hearts: 275500000,
+    })
+  })
+
+  it('accepts the older data.user variant', () => {
     const json = {
       code: 0,
-      msg: 'OK',
       data: {
         user: {
           id: '123456',
@@ -199,48 +230,22 @@ describe('normalizeUserInfo', () => {
           nickname: 'Taylor Swift',
           signature: 'Songwriter',
           avatarLarger: 'https://cdn/avatar.jpg',
-          stats: {
-            followerCount: 95000000,
-            followingCount: 312,
-            videoCount: 1200,
-            heartCount: 1400000000,
-          },
+          stats: { followerCount: 95000000, followingCount: 312, videoCount: 1200, heartCount: 1400000000 },
         },
       },
     }
     const info = normalizeUserInfo(json, 'taylorswift')
     expect(info.id).toBe('123456')
-    expect(info.uniqueId).toBe('taylorswift')
     expect(info.nickname).toBe('Taylor Swift')
-    expect(info.signature).toBe('Songwriter')
-    expect(info.avatar).toBe('https://cdn/avatar.jpg')
-    expect(info.url).toBe('https://www.tiktok.com/@taylorswift')
-    expect(info.stats).toEqual({
-      followers: 95000000,
-      following: 312,
-      videos: 1200,
-      hearts: 1400000000,
-    })
-  })
-
-  it('accepts snake_case and top-level stats variants', () => {
-    const json = {
-      data: {
-        unique_id: 'a.creator',
-        follower_count: 1000,
-        video_count: 5,
-      },
-    }
-    const info = normalizeUserInfo(json, 'a.creator')
-    expect(info.uniqueId).toBe('a.creator')
-    expect(info.stats.followers).toBe(1000)
-    expect(info.stats.videos).toBe(5)
+    expect(info.stats.followers).toBe(95000000)
+    expect(info.stats.hearts).toBe(1400000000)
   })
 
   it('never guesses missing fields — nulls instead', () => {
     const info = normalizeUserInfo({ data: {} }, 'some.user')
     expect(info.nickname).toBeNull()
     expect(info.signature).toBeNull()
+    expect(info.secUid).toBeNull()
     expect(info.stats).toEqual({ followers: null, following: null, videos: null, hearts: null })
     expect(info.url).toBe('https://www.tiktok.com/@some.user')
   })
@@ -254,30 +259,29 @@ describe('normalizeUserInfo', () => {
 })
 
 describe('fetchUserInfo', () => {
-  beforeEach(() => {
-    clearTiktokCache()
-  })
-
-  it('normalizes a real response', async () => {
+  it('normalizes the documented response shape', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: {
-            user: { unique_id: 'taylorswift', nickname: 'Taylor', stats: { followerCount: 42 } },
-          },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+      return new Response(JSON.stringify(userInfoPayload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }))
 
     const info = await fetchUserInfo('taylorswift')
-    expect(info.nickname).toBe('Taylor')
-    expect(info.stats.followers).toBe(42)
+    expect(info.nickname).toBe('Taylor Swift')
+    expect(info.stats.followers).toBe(33400000)
+    expect(info.secUid).toBe('MS4wLjABAAAAqB08cUbXaDWqbD6MCga2RbGTuhfO2EsHayBYx08NDrN7IE3jQuRDNNN6YwyfH6_6')
   })
 
   it('propagates upstream errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 451 })))
 
     await expect(fetchUserInfo('taylorswift')).rejects.toMatchObject({ status: 451 })
+  })
+
+  it('throws on an empty (204) response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })))
+
+    await expect(fetchUserInfo('taylorswift')).rejects.toMatchObject({ status: 502 })
   })
 })
