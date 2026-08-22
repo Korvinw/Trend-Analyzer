@@ -10,6 +10,7 @@ import { VideoCard, type CardStatus } from './video-card'
 import { VideoCardSkeleton } from './video-card-skeleton'
 import { AnalysisDrawer } from './analysis-drawer'
 import { EmptyState } from './empty-state'
+import { AuthModal } from './auth-modal'
 
 interface TrendFeedProps {
   search: string
@@ -44,8 +45,31 @@ export function TrendFeed({ search }: TrendFeedProps) {
   const [activeVideo, setActiveVideo] = useState<TrendVideo | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [showFavorites, setShowFavorites] = useState(false)
+  const [favoriteVideos, setFavoriteVideos] = useState<TrendVideo[]>([])
 
   const fetchSeq = useRef(0)
+
+  // Load favorites from API when user logs in
+  useEffect(() => {
+    if (!user) {
+      setSaved(new Set())
+      setFavoriteVideos([])
+      return
+    }
+    fetch('/api/favorites', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.data) {
+          const ids = new Set<string>(json.data.map((f: { video_id: string }) => f.video_id))
+          setSaved(ids)
+          setFavoriteVideos(json.data.map((f: { video_data: TrendVideo }) => f.video_data))
+        }
+      })
+      .catch(() => {})
+  }, [user])
 
   const loadFeed = useCallback(async (period: Filters['period'], region: Filters['region']) => {
     const seq = ++fetchSeq.current
@@ -122,16 +146,17 @@ export function TrendFeed({ search }: TrendFeedProps) {
   }, [filters, search, videos])
 
   const runAnalysis = async (video: TrendVideo) => {
+    if (!user) {
+      setActiveVideo(video)
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
     setActiveVideo(video)
     setDrawerOpen(true)
 
     if (statuses[video.id] === 'analyzed') {
-      setAnalysisLoading(false)
-      return
-    }
-
-    if (!user) {
-      setStatuses((s) => ({ ...s, [video.id]: 'error' }))
       setAnalysisLoading(false)
       return
     }
@@ -162,7 +187,15 @@ export function TrendFeed({ search }: TrendFeedProps) {
     }
   }
 
-  const toggleSave = (id: string) =>
+  const toggleSave = async (id: string) => {
+    if (!user) {
+      setAuthMode('login')
+      setAuthOpen(true)
+      return
+    }
+
+    const isSaved = saved.has(id)
+    // Optimistic update
     setSaved((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -170,37 +203,98 @@ export function TrendFeed({ search }: TrendFeedProps) {
       return next
     })
 
-  const reset = () => setFilters(DEFAULT_FILTERS)
+    try {
+      if (isSaved) {
+        await fetch(`/api/favorites?videoId=${encodeURIComponent(id)}`, { method: 'DELETE' })
+        setFavoriteVideos((prev) => prev.filter((v) => v.id !== id))
+      } else {
+        const video = videos.find((v) => v.id === id) ?? favoriteVideos.find((v) => v.id === id)
+        if (video) {
+          await fetch('/api/favorites', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: id, videoData: video }),
+          })
+          setFavoriteVideos((prev) => [video, ...prev.filter((v) => v.id !== id)])
+        }
+      }
+    } catch {
+      // Revert on error
+      setSaved((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    }
+  }
+
+  const reset = () => { setFilters(DEFAULT_FILTERS); setShowFavorites(false) }
 
   const updatedLabel =
     feedSource === 'api' ? 'только что' : `Обновлено ${FEED_UPDATED_AGO} назад`
 
+  const displayVideos = showFavorites ? favoriteVideos : visible
+
   return (
     <>
-      {/* Intro zone — compact, working-tool, no marketing hero */}
+      {/* Intro zone */}
       <div className="flex flex-wrap items-end justify-between gap-2 pb-1">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-balance">Трендовые видео</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-balance">
+            {showFavorites ? '\u0418\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435' : '\u0422\u0440\u0435\u043d\u0434\u043e\u0432\u044b\u0435 \u0432\u0438\u0434\u0435\u043e'}
+          </h1>
           <p className="mt-1 text-[15px] text-muted-foreground text-pretty">
-            Форматы, которые прямо сейчас набирают внимание — проверьте потенциал каждого.
+            {showFavorites
+              ? '\u0412\u0430\u0448\u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0435 \u0440\u043e\u043b\u0438\u043a\u0438'
+              : '\u0424\u043e\u0440\u043c\u0430\u0442\u044b, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u043f\u0440\u044f\u043c\u043e \u0441\u0435\u0439\u0447\u0430\u0441 \u043d\u0430\u0431\u0438\u0440\u0430\u044e\u0442 \u0432\u043d\u0438\u043c\u0430\u043d\u0438\u0435 \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u043f\u043e\u0442\u0435\u043d\u0446\u0438\u0430\u043b \u043a\u0430\u0436\u0434\u043e\u0433\u043e.'}
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-          <RefreshCw className="size-3.5" aria-hidden />
-          {feedSource === 'mock' ? 'Демо-данные (API не настроен)' : updatedLabel}
-        </span>
+        <div className="flex items-center gap-2">
+          {user && (
+            <button
+              type="button"
+              onClick={() => setShowFavorites(!showFavorites)}
+              className={'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium transition-colors ' +
+                (showFavorites
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border bg-surface text-muted-foreground hover:text-foreground')}
+            >
+              {'\u2606'} {'\u0418\u0437\u0431\u0440\u0430\u043d\u043d\u043e\u0435'} {saved.size > 0 && `(${saved.size})`}
+            </button>
+          )}
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+            <RefreshCw className="size-3.5" aria-hidden />
+            {feedSource === 'mock' ? '\u0414\u0435\u043c\u043e-\u0434\u0430\u043d\u043d\u044b\u0435 (API \u043d\u0435 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d)' : updatedLabel}
+          </span>
+        </div>
       </div>
 
       <FilterBar filters={filters} onChange={setFilters} onReset={reset} hasActive={hasActiveFilters} />
 
       <section aria-label="Лента трендовых видео" className="pt-5">
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {feedSource === 'loading' ? (
+          {feedSource === 'loading' && !showFavorites ? (
             Array.from({ length: 6 }).map((_, i) => <VideoCardSkeleton key={i} />)
-          ) : visible.length === 0 ? (
-            <EmptyState onReset={reset} />
+          ) : displayVideos.length === 0 ? (
+            showFavorites ? (
+              <div className="col-span-full py-16 text-center">
+                <p className="text-[15px] text-muted-foreground">
+                  {'\u041f\u043e\u043a\u0430 \u043d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043e'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowFavorites(false)}
+                  className="mt-3 text-[13px] font-medium text-primary hover:underline"
+                >
+                  {'\u0412\u0435\u0440\u043d\u0443\u0442\u044c\u0441\u044f \u043a \u043b\u0435\u043d\u0442\u0435'}
+                </button>
+              </div>
+            ) : (
+              <EmptyState onReset={reset} />
+            )
           ) : (
-            visible.map((video) => (
+            displayVideos.map((video) => (
               <VideoCard
                 key={video.id}
                 video={video}
@@ -225,6 +319,8 @@ export function TrendFeed({ search }: TrendFeedProps) {
         onOpenChange={setDrawerOpen}
         onToggleSave={toggleSave}
       />
+
+      <AuthModal open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} />
     </>
   )
 }
