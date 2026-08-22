@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { analyzeVideo, FEED_UPDATED_AGO, VIDEOS } from '@/lib/mock-data'
+import { useAuth } from '@/lib/auth-context'
 import type { TrendVideo, VideoAnalysis } from '@/lib/types'
 import { DEFAULT_FILTERS, FilterBar, type Filters } from './filter-bar'
 import { VideoCard, type CardStatus } from './video-card'
@@ -31,6 +32,7 @@ const apiVideo = (v: TrendVideo) => ({
 })
 
 export function TrendFeed({ search }: TrendFeedProps) {
+  const { user, refresh: refreshAuth } = useAuth()
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [feedSource, setFeedSource] = useState<FeedSource>('loading')
   const [videos, setVideos] = useState<TrendVideo[]>(VIDEOS)
@@ -128,6 +130,12 @@ export function TrendFeed({ search }: TrendFeedProps) {
       return
     }
 
+    if (!user) {
+      setStatuses((s) => ({ ...s, [video.id]: 'error' }))
+      setAnalysisLoading(false)
+      return
+    }
+
     setStatuses((s) => ({ ...s, [video.id]: 'analyzing' }))
     setAnalysisLoading(true)
 
@@ -137,11 +145,16 @@ export function TrendFeed({ search }: TrendFeedProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ video: apiVideo(video) }),
       })
+      if (res.status === 402) {
+        await refreshAuth()
+        setAnalyses((a) => ({ ...a, [video.id]: analyzeVideo(video) }))
+        return
+      }
       if (!res.ok) throw new Error(`analyze request failed: ${res.status}`)
       const json = await res.json()
       setAnalyses((a) => ({ ...a, [video.id]: json.data }))
+      await refreshAuth()
     } catch {
-      // Backend unavailable (no GEMINI_API_KEY etc.) — deterministic demo analysis.
       setAnalyses((a) => ({ ...a, [video.id]: analyzeVideo(video) }))
     } finally {
       setStatuses((s) => ({ ...s, [video.id]: 'analyzed' }))

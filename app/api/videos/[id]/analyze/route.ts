@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { GeminiApiError, analyzeWithGemini, geminiModel, isGeminiConfigured, mapGeminiToAnalysis } from '@/lib/api/gemini'
 import { analyzeBodySchema } from '@/lib/api/schemas'
+import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,15 +12,36 @@ interface RouteContext {
 /**
  * POST /api/videos/:id/analyze
  *
+ * Requires authentication. Deducts 1 credit per analysis.
  * Body: { "video": { id, rank?, title, cover, duration, itemUrl, countryCode, region } }
- *
- * Runs Gemini in METADATA_ONLY mode (the TikTok endpoint does not expose
- * video bytes or engagement metrics), strictly validates the result and
- * maps it into the frontend VideoAnalysis shape.
  */
 export async function POST(request: Request, { params }: RouteContext) {
   const { id } = await params
 
+  // --- Auth check ---
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return NextResponse.json(
+      { error: { code: 'AUTH', message: 'Необходима авторизация' } },
+      { status: 401 },
+    )
+  }
+
+  // --- Credit check & deduction ---
+  const { data: creditsRemaining, error: creditError } = await supabase.rpc('deduct_credit', {
+    uid: user.id,
+  })
+
+  if (creditError || !creditsRemaining) {
+    return NextResponse.json(
+      { error: { code: 'CREDITS', message: 'Недостаточно кредитов для анализа' } },
+      { status: 402 },
+    )
+  }
+
+  // --- Validate body ---
   let body
   try {
     body = await request.json()
@@ -53,6 +75,7 @@ export async function POST(request: Request, { params }: RouteContext) {
     )
   }
 
+  // --- Run analysis ---
   try {
     const result = await analyzeWithGemini(video)
     const analysis = mapGeminiToAnalysis(result, video)
@@ -62,6 +85,7 @@ export async function POST(request: Request, { params }: RouteContext) {
         evidenceLevel: result.evidenceLevel,
         model: geminiModel(),
         analyzedAt: new Date().toISOString(),
+        creditsRemaining,
       },
     })
   } catch (err) {

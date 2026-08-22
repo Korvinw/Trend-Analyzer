@@ -2,6 +2,7 @@
 
 import { Activity, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { UserMenu } from './user-menu'
 
 interface TopBarProps {
   active: 'trends' | 'methodology'
@@ -54,6 +55,9 @@ export function TopBar({ active, onNavigate, search, onSearchChange }: TopBarPro
             />
           </label>
         </div>
+
+        {/* Auth */}
+        <UserMenu />
       </div>
     </header>
   )

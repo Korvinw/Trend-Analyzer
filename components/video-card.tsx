@@ -8,7 +8,7 @@ import { formatCount } from '@/lib/format'
 import { ScoreBadge } from './score-badge'
 import { TrendPill } from './trend-pill'
 
-export type CardStatus = 'idle' | 'analyzing' | 'analyzed'
+export type CardStatus = 'idle' | 'analyzing' | 'analyzed' | 'error'
 
 interface VideoCardProps {
   video: TrendVideo
