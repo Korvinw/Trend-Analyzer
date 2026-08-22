@@ -20,9 +20,7 @@ export async function POST() {
     )
   }
 
-  const { data, error } = await supabase.rpc('deduct_credit', {
-    uid: user.id,
-  })
+  const { data, error } = await supabase.rpc('deduct_credit')
 
   if (error || !data) {
     return NextResponse.json(

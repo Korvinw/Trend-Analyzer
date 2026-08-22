@@ -30,9 +30,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 
   // --- Credit check & deduction ---
-  const { data: creditsRemaining, error: creditError } = await supabase.rpc('deduct_credit', {
-    uid: user.id,
-  })
+  const { data: creditsRemaining, error: creditError } = await supabase.rpc('deduct_credit')
 
   if (creditError || !creditsRemaining) {
     return NextResponse.json(

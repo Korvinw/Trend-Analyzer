@@ -14,6 +14,46 @@
         "x-api-key: {env:TIKTOK_RAPIDAPI_KEY}"
       ],
       "enabled": true
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ctx7sk-1a9df748-c6f2-4aa5-8698-aa5d9c88f227"
+      },
+      "enabled": true
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "enabled": true
+    },
+    "shadcn": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "shadcn@latest",
+        "mcp"
+      ],
+      "enabled": true
+    },
+    "semgrep": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "semgrep-mcp"
+      ],
+      "enabled": true
+    },
+    "supabase": {
+      "type": "remote",
+      "url": "https://mcp.supabase.com/mcp",
+      "enabled": true
     }
   }
 }
